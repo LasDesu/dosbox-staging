@@ -331,7 +331,11 @@ Bitu keyboard_layout::read_keyboard_file(const char* keyboard_file_name, Bit32s 
 			return KEYB_FILENOTFOUND;
 		}
 		if (tempfile) {
-			fseek(tempfile.get(), start_pos + 2, SEEK_SET);
+			if (fseek(tempfile.get(), start_pos + 2, SEEK_SET) != 0) {
+				LOG(LOG_BIOS, LOG_ERROR)
+				("Keyboard layout file %s not found", keyboard_file_name);
+				return KEYB_INVALIDFILE;
+			}
 			read_buf_size = (Bit32u)fread(read_buf, sizeof(Bit8u),
 			                              65535, tempfile.get());
 		}
