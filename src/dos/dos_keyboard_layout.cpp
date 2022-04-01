@@ -176,7 +176,9 @@ static Bit32u read_kcl_file(const char* kcl_file_name, const char* layout_id, bo
 		return 0;
 	}
 
-	fseek(tempfile.get(), 7 + rbuf[6], SEEK_SET);
+	if(fseek(tempfile.get(), 7 + rbuf[6], SEEK_SET) != 0) {
+		return 0;
+	}
 
 	for (;;) {
 		Bit32u cur_pos = (Bit32u)(ftell(tempfile.get()));
