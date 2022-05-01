@@ -1134,6 +1134,7 @@ static SDL_Window *SetWindowMode(SCREEN_TYPES screen_type,
 		remove_window();
 
 		uint32_t flags = opengl_driver_crash_workaround(screen_type);
+		flags |= SDL_WINDOW_ALLOW_HIGHDPI;
 #if C_OPENGL
 		if (screen_type == SCREEN_OPENGL)
 			flags |= SDL_WINDOW_OPENGL;
@@ -1250,20 +1251,41 @@ SDL_Rect GFX_GetSDLSurfaceSubwindowDims(uint16_t width, uint16_t height)
 	return rect;
 }
 
+// kvas kompot pelmeni shashlyki kotlety bliny belyashi
+static void get_canvas_size(SCREEN_TYPES screen_type, int *w, int *h)
+{
+	switch (screen_type) {
+	case SCREEN_SURFACE: SDL_GetWindowSize(sdl.window, w, h); break;
+	case SCREEN_TEXTURE:
+		SDL_GetRendererOutputSize(sdl.renderer, w, h);
+		break;
+#if C_OPENGL
+	case SCREEN_OPENGL: SDL_GL_GetDrawableSize(sdl.window, w, h); break;
+#endif
+	}
+}
+
 static SDL_Window *setup_window_pp(SCREEN_TYPES screen_type, bool resizable)
 {
 	assert(sdl.window);
 
-	int w, h;
-	if (sdl.desktop.fullscreen) {
-		SDL_GetWindowSize(sdl.window, &w, &h);
-	} else {
+	int w, h, canvas_width, canvas_height;
+
+	SDL_GetWindowSize(sdl.window, &w, &h);
+	assert(w > 0 && h > 0);
+
+	get_canvas_size(screen_type, &canvas_width, &canvas_height);
+	assert(canvas_width > 0 && canvas_height > 0);
+
+	const float dpi_scale = static_cast<float>(canvas_width) / w;
+
+	if (!sdl.desktop.fullscreen) {
 		w = sdl.desktop.requested_window_bounds.width;
 		h = sdl.desktop.requested_window_bounds.height;
 	}
-	assert(w > 0 && h > 0);
 
-	const auto render_resolution = restrict_to_viewport_resolution(w, h);
+	const auto render_resolution = restrict_to_viewport_resolution(w * dpi_scale,
+	                                                               h * dpi_scale);
 
 	sdl.pp_scale = calc_pp_scale(render_resolution.x, render_resolution.y);
 
@@ -1275,14 +1297,18 @@ static SDL_Window *setup_window_pp(SCREEN_TYPES screen_type, bool resizable)
 		win_width = w;
 		win_height = h;
 	} else {
-		win_width = (sdl.desktop.fullscreen ? w : img_width);
-		win_height = (sdl.desktop.fullscreen ? h : img_height);
+		win_width = (sdl.desktop.fullscreen ? w : img_width / dpi_scale);
+		win_height = (sdl.desktop.fullscreen ? h : img_height / dpi_scale);
 	}
 
 	sdl.clip.w = img_width;
 	sdl.clip.h = img_height;
-	sdl.clip.x = (win_width - img_width) / 2;
-	sdl.clip.y = (win_height - img_height) / 2;
+	sdl.clip.x = sdl.desktop.fullscreen
+	                     ? (canvas_width - img_width) / 2
+	                     : (win_width * dpi_scale - img_width) / 2;
+	sdl.clip.y = sdl.desktop.fullscreen
+	                     ? (canvas_height - img_height) / 2
+	                     : (win_height * dpi_scale - img_height) / 2;
 
 	sdl.window = SetWindowMode(screen_type, win_width, win_height,
 	                           sdl.desktop.fullscreen, resizable);
@@ -1304,7 +1330,7 @@ static SDL_Window *SetupWindowScaled(SCREEN_TYPES screen_type, bool resizable)
 	if (sdl.scaling_mode == SCALING_MODE::PERFECT)
 		return setup_window_pp(screen_type, resizable);
 
-	int w, h;
+	int w, h, canvas_width, canvas_height;
 	if (sdl.desktop.fullscreen) {
 		w = sdl.desktop.full.fixed ? sdl.desktop.full.width : 0;
 		h = sdl.desktop.full.fixed ? sdl.desktop.full.height : 0;
@@ -1314,17 +1340,19 @@ static SDL_Window *SetupWindowScaled(SCREEN_TYPES screen_type, bool resizable)
 	}
 
 	if (w > 0 && h > 0) {
-		sdl.clip = calc_viewport_fit(w, h);
 		sdl.window = SetWindowMode(screen_type, w, h,
 		                           sdl.desktop.fullscreen, resizable);
+
+		get_canvas_size(screen_type, &canvas_width, &canvas_height);
+		assert(canvas_width > 0 && canvas_height > 0);
+
+		sdl.clip = calc_viewport_fit(canvas_width, canvas_height);
 
 		const auto is_window_fullscreen = SDL_GetWindowFlags(sdl.window) &
 		                                  SDL_WINDOW_FULLSCREEN;
 		if (sdl.window && is_window_fullscreen) {
-			int win_width;
-			SDL_GetWindowSize(sdl.window, &win_width, NULL);
-			sdl.clip.x = (win_width - sdl.clip.w) / 2;
-			sdl.clip.y = (h - sdl.clip.h) / 2;
+			sdl.clip.x = (canvas_width - sdl.clip.w) / 2;
+			sdl.clip.y = (canvas_height - sdl.clip.h) / 2;
 		}
 		return sdl.window;
 
@@ -1332,10 +1360,14 @@ static SDL_Window *SetupWindowScaled(SCREEN_TYPES screen_type, bool resizable)
 		const auto win_width = iround(sdl.draw.width * sdl.draw.scalex);
 		const auto win_height = iround(sdl.draw.height * sdl.draw.scaley);
 
-		sdl.clip = calc_viewport_fit(win_width, win_height);
-
 		sdl.window = SetWindowMode(screen_type, win_width, win_height,
 		                           sdl.desktop.fullscreen, resizable);
+
+		get_canvas_size(screen_type, &canvas_width, &canvas_height);
+		assert(canvas_width > 0 && canvas_height > 0);
+
+		sdl.clip = calc_viewport_fit(canvas_width, canvas_height);
+
 		return sdl.window;
 	}
 }
@@ -1856,24 +1888,26 @@ dosurface:
 			SDL_GetWindowSize(sdl.window, &windowWidth, &windowHeight);
 		}
 
+		int canvas_width, canvas_height;
+		SDL_GL_GetDrawableSize(sdl.window, &canvas_width, &canvas_height);
+
 		if (sdl.clip.x == 0 && sdl.clip.y == 0 &&
 		    sdl.desktop.fullscreen && !sdl.desktop.full.fixed &&
-		    (sdl.clip.w != windowWidth || sdl.clip.h != windowHeight)) {
-			// LOG_MSG("attempting to fix the centering to %d %d %d %d",(windowWidth-sdl.clip.w)/2,(windowHeight-sdl.clip.h)/2,sdl.clip.w,sdl.clip.h);
-			sdl.clip = calc_viewport(windowWidth, windowHeight);
+		    (sdl.clip.w != canvas_width || sdl.clip.h != canvas_height)) {
+			// LOG_MSG("attempting to fix the centering to %d %d %d %d",(canvas_width-sdl.clip.w)/2,(canvas_height-sdl.clip.h)/2,sdl.clip.w,sdl.clip.h);
+			sdl.clip = calc_viewport(canvas_width, canvas_height);
 			glViewport(sdl.clip.x, sdl.clip.y, sdl.clip.w, sdl.clip.h);
 		} else if (sdl.desktop.window.resizable) {
-			sdl.clip = calc_viewport(windowWidth, windowHeight);
+			sdl.clip = calc_viewport(canvas_width, canvas_height);
 			glViewport(sdl.clip.x, sdl.clip.y, sdl.clip.w, sdl.clip.h);
 		} else {
 			/* We don't just pass sdl.clip.y as-is, so we cover the case of non-vertical
 			 * centering on Android (in order to leave room for the on-screen keyboard)
 			 */
-			sdl.clip = calc_viewport(windowWidth, windowHeight);
+			sdl.clip = calc_viewport(canvas_width, canvas_height);
 			glViewport(sdl.clip.x,
-			           windowHeight - (sdl.clip.y + sdl.clip.h),
-			           sdl.clip.w,
-			           sdl.clip.h);
+			           canvas_height - (sdl.clip.y + sdl.clip.h),
+			           sdl.clip.w, sdl.clip.h);
 		}
 
 		if (sdl.opengl.texture > 0) {
@@ -3563,7 +3597,11 @@ static void HandleVideoResize(int width, int height)
 
 #if C_OPENGL
 	if (sdl.desktop.window.resizable && sdl.desktop.type == SCREEN_OPENGL) {
-		sdl.clip = calc_viewport(width, height);
+		int canvas_width, canvas_height;
+		SDL_GL_GetDrawableSize(sdl.window, &canvas_width, &canvas_height);
+		assert(canvas_width > 0 && canvas_height > 0);
+		// TODO: Pray to the Nine that it doesn't do anything weird.
+		sdl.clip = calc_viewport(canvas_width, canvas_height);
 		glViewport(sdl.clip.x, sdl.clip.y, sdl.clip.w, sdl.clip.h);
 
 		if (!sdl.desktop.fullscreen) {
