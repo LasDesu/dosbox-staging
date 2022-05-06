@@ -39,8 +39,6 @@
 #include "string_utils.h"
 #include "vga.h"
 
-#include "render_crt_glsl.h"
-#include "render_glsl.h"
 #include "render_scalers.h"
 
 Render_t render;
