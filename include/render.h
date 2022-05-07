@@ -89,7 +89,7 @@ struct Render_t {
 		uint32_t outLine = 0;
 	} scale = {};
 #if C_OPENGL
-	char *shader_src = nullptr;
+	std::string shader_src = {};
 #endif
 	RenderPal_t pal = {};
 	bool updating = false;

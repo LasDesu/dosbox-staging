@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <unordered_map>
 
@@ -669,7 +670,7 @@ std::deque<std::string> RENDER_InventoryShaders()
 	return inventory;
 }
 
-static bool RENDER_GetShader(std::string &shader_path, char *old_src)
+static bool RENDER_GetShader(const std::string &shader_path, std::string &source)
 {
 	// Start with the path as-is and then try from resources
 	const auto candidate_paths = {std_fs::path(shader_path),
@@ -684,7 +685,7 @@ static bool RENDER_GetShader(std::string &shader_path, char *old_src)
 			break;
 
 	if (s.empty()) {
-		render.shader_src = nullptr;
+		source.clear();
 		return false;
 	}
 
@@ -714,18 +715,14 @@ static bool RENDER_GetShader(std::string &shader_path, char *old_src)
 			s.insert(pos, pre_defs);
 		}
 	}
-	// keep the same buffer if contents aren't different
-	char *src = nullptr;
-	if (!old_src || s != old_src) {
-		src = strdup(s.c_str());
-		if (!src) {
-			LOG_ERR("RENDER: Couldn't copy shader source");
-		}
-	} else {
-		src = old_src;
+	if (s.empty()) {
+		source.clear();
+		LOG_ERR("RENDER: Failed to read shader source");
+		return false;
 	}
-	render.shader_src = src;
-	return (render.shader_src != nullptr);
+	source = std::move(s);
+	assert(source.length());
+	return true;
 }
 #endif
 
@@ -791,36 +788,51 @@ void RENDER_Init(Section * sec) {
 	assert(sdl_sec);
 	const bool using_opengl = starts_with("opengl",
 	                                      sdl_sec->GetPropValue("output"));
-	char* shader_src = render.shader_src;
 	Prop_path *sh = section->Get_path("glshader");
 	f = (std::string)sh->GetValue();
+
+	auto &source = render.shader_src;
+	std::hash<std::string> hash_fn;
+	const auto previous_source_hash = hash_fn(source);
 
 	// if 'default' is given, use the sharp shader
 	if (f == "default")
 		f = "sharp";
 
+	const std::string fallback_shader = "none";
 	if (f.empty() || f == "none")
-		render.shader_src = NULL;
-	else if (!RENDER_GetShader(sh->realpath, shader_src) &&
-	         (sh->realpath == f || !RENDER_GetShader(f, shader_src))) {
+		f = fallback_shader;
+
+	if (!RENDER_GetShader(sh->realpath, source) &&
+	    (sh->realpath == f || !RENDER_GetShader(f, source))) {
 		sh->SetValue("none");
+		source.clear();
+
+		// List all the existing shaders for the user
 		LOG_ERR("RENDER: Shader file '%s' not found", f.c_str());
-		for (const auto &line : RENDER_InventoryShaders())
+		for (const auto &line : RENDER_InventoryShaders()) {
 			LOG_WARNING("RENDER: %s", line.c_str());
+		}
+		// Fallback to the 'none' shader and otherwise fail
+		if (!RENDER_GetShader(fallback_shader, source)) {
+			E_Exit("RENDER: Fallback shader file '%s' not found and is mandatory",
+			       fallback_shader.c_str());
+		}
 	} else if (using_opengl) {
 		LOG_MSG("RENDER: Using GLSL shader '%s'", f.c_str());
 	}
-	if (shader_src!=render.shader_src) free(shader_src);
 #endif
 
 	//If something changed that needs a ReInit
 	// Only ReInit when there is a src.bpp (fixes crashes on startup and directly changing the scaler without a screen specified yet)
-	if(running && render.src.bpp && ((render.aspect != aspect) || (render.scale.op != scaleOp) || 
-				  (render.scale.size != scalersize) || (render.scale.forced != scalerforced) ||
+	if (running && render.src.bpp &&
+	    ((render.aspect != aspect) || (render.scale.op != scaleOp) ||
+	     (render.scale.size != scalersize) ||
+	     (render.scale.forced != scalerforced) ||
 #if C_OPENGL
-				  (render.shader_src != shader_src) ||
+	     (previous_source_hash != hash_fn(source)) ||
 #endif
-				   render.scale.forced))
+	     render.scale.forced))
 		RENDER_CallBack( GFX_CallBackReset );
 
 	if(!running) render.updating=true;
