@@ -409,6 +409,7 @@ subdir('src/libs/residfp')
 subdir('src/libs/sdlcd')
 subdir('src/libs/whereami')
 subdir('src/libs/PDCurses')
+subdir('src/libs/z80ex')
 
 # internal libs
 #

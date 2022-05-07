@@ -100,6 +100,7 @@ void DISNEY_Init(Section*);
 void PS1AUDIO_Init(Section *);
 void INNOVA_Init(Section*);
 void SERIAL_Init(Section*);
+void IBMMFC_Init(Section*);
 
 
 #if C_IPX
@@ -881,6 +882,29 @@ void DOSBOX_Init() {
 	secprop->AddInitFunction(&PS1AUDIO_Init, true);
 	Pbool = secprop->Add_bool("ps1audio", when_idle, false);
 	Pbool->Set_help("Enable IBM PS/1 Audio emulation.");
+
+	// IBM Music Feature Card emulation
+	secprop = control->AddSection_prop("ibmmfc", &IBMMFC_Init, false);
+	Pbool = secprop->Add_bool("ibmmfc", when_idle, false);
+	Pbool->Set_help("Enable the IBM Music Feature Card emulation.");
+
+	const char *iosimfc[] = { "2A20", "2A30", 0 };
+	Phex = secprop->Add_hex("imfcbase", when_idle, 0x2A20);
+	Phex->Set_values(iosimfc);
+	Phex->Set_help("The IO address of the IBM Music Feature Card emulation.");
+
+	const char *irqsimfc[] = { "3", "7", "6", "5", "4", "2", 0 };
+	Pint = secprop->Add_int("imfcirq", when_idle, 3);
+	Pint->Set_values(irqsimfc);
+	Pint->Set_help("The IRQ number of the IBM Music Feature Card.");
+
+	const char *imfcrates[] = { "44100", "22050", "11025", 0 };	// fmgen restrictions
+	Pint = secprop->Add_int("imfcrate", when_idle, 44100);
+	Pint->Set_values(imfcrates);
+	Pint->Set_help("Sample rate of IBM Music Feature Card emulation.");
+
+	Pstring = secprop->Add_path("imfcrom", when_idle, "IMFC.BIN");
+	Pstring->Set_help("ROM image for IBM Music Feature Card.");
 
 	secprop=control->AddSection_prop("joystick",&BIOS_Init,false);//done
 	secprop->AddInitFunction(&INT10_Init);

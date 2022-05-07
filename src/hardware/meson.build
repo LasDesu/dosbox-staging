@@ -6,9 +6,16 @@ libhardware_sources = files([
   'disney.cpp',
   'dma.cpp',
   'envelope.cpp',
+  'fmgen/fmgen.cpp',
+  'fmgen/fmtimer.cpp',
+  'fmgen/opm.cpp',
+  'fmgen/opna.cpp',
+  'fmgen/opp.cpp',
+  'fmgen/psg.cpp',
   'gameblaster.cpp',
   'gus.cpp',
   'hardware.cpp',
+  'ibmmfc.cpp',
   'ide.cpp',
   'innovation.cpp',
   'iohandler.cpp',
@@ -54,6 +61,7 @@ libhardware_sources = files([
   'vga_seq.cpp',
   'vga_tseng.cpp',
   'vga_xga.cpp',
+  
 ])
 
 libhardware = static_library('hardware', libhardware_sources,
@@ -68,6 +76,7 @@ libhardware = static_library('hardware', libhardware_sources,
                                sdl2_dep,
                                sdl2_net_dep,
                                winsock2_dep,
+                               z80ex_dep,
                              ])
 
 libhardware_dep = declare_dependency(link_with : libhardware)
